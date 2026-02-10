@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.env
+watchlist_state.json
+node_modules/
+.DS_Store
