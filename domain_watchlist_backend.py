@@ -227,7 +227,7 @@ def check_domain(domain_name):
             "lastChecked": datetime.now(timezone.utc).isoformat(),
         }
 
-    except whois.parser.PywhoisError:
+    except (whois.exceptions.PywhoisError, whois.exceptions.WhoisDomainNotFoundError, whois.WhoisError):
         # Domain not found = available
         result = {
             "status": "available",
@@ -481,7 +481,7 @@ def run_server():
 ╚══════════════════════════════════════════════════════════╝
     """)
 
-    app.run(host="0.0.0.0", port=PORT, debug=True)
+    app.run(host="0.0.0.0", port=PORT, debug=False)
 
 
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
