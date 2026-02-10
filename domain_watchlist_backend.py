@@ -37,6 +37,98 @@ ALERT_RECIPIENT = os.environ.get("ALERT_RECIPIENT", GMAIL_ADDRESS)  # defaults t
 DATA_FILE = "watchlist_state.json"
 PORT = 5000
 
+# ─── TLD PRICING & REGISTRAR DATA ──────────────────────────────────────────
+# Approximate first-year registration prices (USD) for common TLDs.
+# Prices are estimates and may vary by registrar and promotions.
+
+TLD_PRICING = {
+    ".com":      {"low": 8.99,  "high": 12.99},
+    ".net":      {"low": 9.99,  "high": 14.99},
+    ".org":      {"low": 9.99,  "high": 12.99},
+    ".io":       {"low": 29.99, "high": 49.99},
+    ".dev":      {"low": 10.99, "high": 16.99},
+    ".app":      {"low": 11.99, "high": 17.99},
+    ".co":       {"low": 9.99,  "high": 29.99},
+    ".ai":       {"low": 49.99, "high": 89.99},
+    ".me":       {"low": 6.99,  "high": 19.99},
+    ".info":     {"low": 3.99,  "high": 14.99},
+    ".xyz":      {"low": 1.99,  "high": 12.99},
+    ".tech":     {"low": 4.99,  "high": 49.99},
+    ".online":   {"low": 1.99,  "high": 34.99},
+    ".store":    {"low": 1.99,  "high": 49.99},
+    ".site":     {"low": 1.99,  "high": 29.99},
+    ".cloud":    {"low": 6.99,  "high": 19.99},
+    ".us":       {"low": 6.99,  "high": 12.99},
+    ".uk":       {"low": 5.99,  "high": 9.99},
+    ".ca":       {"low": 8.99,  "high": 14.99},
+    ".de":       {"low": 5.99,  "high": 12.99},
+    ".in":       {"low": 5.99,  "high": 12.99},
+    ".biz":      {"low": 9.99,  "high": 16.99},
+    ".tv":       {"low": 29.99, "high": 39.99},
+    ".cc":       {"low": 9.99,  "high": 19.99},
+    ".so":       {"low": 19.99, "high": 39.99},
+    ".gg":       {"low": 39.99, "high": 79.99},
+}
+
+REGISTRARS = [
+    {
+        "name": "Namecheap",
+        "url": "https://www.namecheap.com/domains/registration/results/?domain={domain}",
+        "icon": "namecheap",
+    },
+    {
+        "name": "Cloudflare",
+        "url": "https://www.cloudflare.com/products/registrar/",
+        "icon": "cloudflare",
+        "note": "At-cost pricing",
+    },
+    {
+        "name": "Porkbun",
+        "url": "https://porkbun.com/checkout/search?q={domain}",
+        "icon": "porkbun",
+    },
+    {
+        "name": "GoDaddy",
+        "url": "https://www.godaddy.com/domainsearch/find?domainToCheck={domain}",
+        "icon": "godaddy",
+    },
+    {
+        "name": "Google Domains",
+        "url": "https://domains.google.com/registrar/search?searchTerm={domain}",
+        "icon": "google",
+    },
+]
+
+
+def get_domain_tld(domain_name):
+    """Extract the TLD from a domain name (e.g., 'example.co.uk' -> '.co.uk')."""
+    parts = domain_name.rsplit(".", 1)
+    if len(parts) == 2:
+        return "." + parts[1]
+    return None
+
+
+def get_pricing_info(domain_name):
+    """Return pricing estimates and registrar purchase links for a domain."""
+    tld = get_domain_tld(domain_name)
+    pricing = TLD_PRICING.get(tld) if tld else None
+
+    purchase_links = []
+    for reg in REGISTRARS:
+        purchase_links.append({
+            "name": reg["name"],
+            "url": reg["url"].format(domain=domain_name),
+            "note": reg.get("note"),
+        })
+
+    return {
+        "tld": tld,
+        "estimatedPrice": pricing,
+        "currency": "USD",
+        "purchaseLinks": purchase_links,
+        "note": "Prices are approximate first-year registration costs and may vary.",
+    }
+
 # ─── STATE MANAGEMENT ────────────────────────────────────────────────────────
 
 def load_state():
@@ -72,7 +164,7 @@ def check_domain(domain_name):
 
         # Determine if domain is registered
         if w.domain_name is None:
-            return {
+            result = {
                 "status": "available",
                 "registrar": None,
                 "expiryDate": None,
@@ -80,6 +172,8 @@ def check_domain(domain_name):
                 "nameServers": [],
                 "lastChecked": datetime.now(timezone.utc).isoformat(),
             }
+            result["pricing"] = get_pricing_info(domain_name)
+            return result
 
         # Parse expiry date
         expiry = w.expiration_date
@@ -135,7 +229,7 @@ def check_domain(domain_name):
 
     except whois.parser.PywhoisError:
         # Domain not found = available
-        return {
+        result = {
             "status": "available",
             "registrar": None,
             "expiryDate": None,
@@ -143,6 +237,8 @@ def check_domain(domain_name):
             "nameServers": [],
             "lastChecked": datetime.now(timezone.utc).isoformat(),
         }
+        result["pricing"] = get_pricing_info(domain_name)
+        return result
     except Exception as e:
         return {
             "status": "error",

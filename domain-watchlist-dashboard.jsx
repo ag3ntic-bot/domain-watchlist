@@ -6,6 +6,54 @@ const STORAGE_KEY = "domain-watchlist-v1";
 const MOCK_STATUSES = ["registered", "available", "expiring_soon", "pending_delete", "redemption_period"];
 const MOCK_REGISTRARS = ["GoDaddy", "Namecheap", "Cloudflare", "Google Domains", "Porkbun", "Dynadot"];
 
+const TLD_PRICING = {
+  ".com": { low: 8.99, high: 12.99 },
+  ".net": { low: 9.99, high: 14.99 },
+  ".org": { low: 9.99, high: 12.99 },
+  ".io": { low: 29.99, high: 49.99 },
+  ".dev": { low: 10.99, high: 16.99 },
+  ".app": { low: 11.99, high: 17.99 },
+  ".co": { low: 9.99, high: 29.99 },
+  ".ai": { low: 49.99, high: 89.99 },
+  ".me": { low: 6.99, high: 19.99 },
+  ".info": { low: 3.99, high: 14.99 },
+  ".xyz": { low: 1.99, high: 12.99 },
+  ".tech": { low: 4.99, high: 49.99 },
+  ".online": { low: 1.99, high: 34.99 },
+  ".store": { low: 1.99, high: 49.99 },
+  ".site": { low: 1.99, high: 29.99 },
+  ".cloud": { low: 6.99, high: 19.99 },
+  ".us": { low: 6.99, high: 12.99 },
+  ".uk": { low: 5.99, high: 9.99 },
+  ".ca": { low: 8.99, high: 14.99 },
+  ".de": { low: 5.99, high: 12.99 },
+  ".in": { low: 5.99, high: 12.99 },
+  ".biz": { low: 9.99, high: 16.99 },
+  ".tv": { low: 29.99, high: 39.99 },
+  ".cc": { low: 9.99, high: 19.99 },
+  ".so": { low: 19.99, high: 39.99 },
+  ".gg": { low: 39.99, high: 79.99 },
+};
+
+const PURCHASE_REGISTRARS = [
+  { name: "Namecheap", url: "https://www.namecheap.com/domains/registration/results/?domain={domain}" },
+  { name: "Cloudflare", url: "https://www.cloudflare.com/products/registrar/", note: "At-cost pricing" },
+  { name: "Porkbun", url: "https://porkbun.com/checkout/search?q={domain}" },
+  { name: "GoDaddy", url: "https://www.godaddy.com/domainsearch/find?domainToCheck={domain}" },
+  { name: "Google Domains", url: "https://domains.google.com/registrar/search?searchTerm={domain}" },
+];
+
+function getDomainPricing(domain) {
+  const tld = "." + domain.split(".").pop();
+  const pricing = TLD_PRICING[tld] || null;
+  const links = PURCHASE_REGISTRARS.map((r) => ({
+    name: r.name,
+    url: r.url.replace("{domain}", domain),
+    note: r.note || null,
+  }));
+  return { tld, estimatedPrice: pricing, currency: "USD", purchaseLinks: links };
+}
+
 function generateMockWhois(domain) {
   const status = MOCK_STATUSES[Math.floor(Math.random() * MOCK_STATUSES.length)];
   const daysUntilExpiry = Math.floor(Math.random() * 365) + 1;
@@ -16,6 +64,7 @@ function generateMockWhois(domain) {
     expiryDate: status === "available" ? null : expiryDate,
     daysUntilExpiry: status === "available" ? null : daysUntilExpiry,
     nameServers: status === "available" ? [] : ["ns1.example.com", "ns2.example.com"],
+    pricing: status === "available" ? getDomainPricing(domain) : null,
     lastChecked: new Date().toISOString(),
   };
 }
@@ -99,6 +148,7 @@ export default function DomainWatchlist() {
       daysUntilExpiry: null,
       lastChecked: null,
       previousStatus: null,
+      pricing: null,
       addedAt: new Date().toISOString(),
       notes: "",
       starred: false,
@@ -145,6 +195,9 @@ export default function DomainWatchlist() {
         data = await res.json();
       }
 
+      // For available domains, ensure pricing info is present
+      const pricing = data.pricing || (data.status === "available" ? getDomainPricing(domain.name) : null);
+
       setDomains((prev) =>
         prev.map((d) =>
           d.id === id
@@ -156,6 +209,7 @@ export default function DomainWatchlist() {
                 expiryDate: data.expiryDate,
                 daysUntilExpiry: data.daysUntilExpiry,
                 lastChecked: data.lastChecked,
+                pricing,
               }
             : d
         )
@@ -438,95 +492,147 @@ export default function DomainWatchlist() {
               const sc = STATUS_CONFIG[d.status] || STATUS_CONFIG.unchecked;
               const isChecking = checkingDomain === d.id;
               const statusChanged = d.previousStatus && d.previousStatus !== d.status;
+              const showPricing = d.status === "available" && d.pricing;
               return (
                 <div
                   key={d.id}
                   style={{
-                    padding: "14px 20px", borderRadius: 10,
+                    borderRadius: 10,
                     border: statusChanged ? "1px solid #f59e0b" : d.status === "available" ? "1px solid #16a34a33" : "1px solid #1e293b",
                     background: d.status === "available" ? "#0a1a0f" : "#0d1220",
-                    display: "flex", alignItems: "center", gap: 16,
                     animation: `fadeUp 0.2s ease ${i * 0.03}s both`,
                     transition: "all 0.2s",
+                    overflow: "hidden",
                   }}
                 >
-                  {/* Star */}
-                  <button onClick={() => toggleStar(d.id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16, opacity: d.starred ? 1 : 0.3, transition: "opacity 0.2s" }}>
-                    {d.starred ? "⭐" : "☆"}
-                  </button>
+                  {/* Main Row */}
+                  <div style={{ padding: "14px 20px", display: "flex", alignItems: "center", gap: 16 }}>
+                    {/* Star */}
+                    <button onClick={() => toggleStar(d.id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16, opacity: d.starred ? 1 : 0.3, transition: "opacity 0.2s" }}>
+                      {d.starred ? "⭐" : "☆"}
+                    </button>
 
-                  {/* Domain Name */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: "#f8fafc", fontFamily: "'JetBrains Mono', monospace", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {d.name}
+                    {/* Domain Name */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: "#f8fafc", fontFamily: "'JetBrains Mono', monospace", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {d.name}
+                      </div>
+                      {d.registrar && (
+                        <div style={{ fontSize: 10, color: "#475569", marginTop: 2 }}>via {d.registrar}</div>
+                      )}
                     </div>
-                    {d.registrar && (
-                      <div style={{ fontSize: 10, color: "#475569", marginTop: 2 }}>via {d.registrar}</div>
+
+                    {/* Status Badge */}
+                    <div style={{
+                      padding: "4px 10px", borderRadius: 20, fontSize: 11, fontWeight: 600,
+                      background: sc.bg, color: sc.color, whiteSpace: "nowrap",
+                      border: `1px solid ${sc.color}22`,
+                      animation: d.status === "available" ? "pulse 2s infinite" : "none",
+                    }}>
+                      {sc.icon} {sc.label}
+                    </div>
+
+                    {/* Price Estimate (inline for available domains) */}
+                    {showPricing && d.pricing.estimatedPrice && (
+                      <div style={{ fontSize: 12, color: "#16a34a", fontWeight: 700, whiteSpace: "nowrap", fontFamily: "'Space Grotesk', sans-serif" }}>
+                        ${d.pricing.estimatedPrice.low}
+                        {d.pricing.estimatedPrice.low !== d.pricing.estimatedPrice.high && (
+                          <span style={{ color: "#64748b", fontWeight: 400 }}> – ${d.pricing.estimatedPrice.high}</span>
+                        )}
+                        <span style={{ fontSize: 9, color: "#475569", fontWeight: 400, marginLeft: 2 }}>/yr</span>
+                      </div>
                     )}
+
+                    {/* Status Change Indicator */}
+                    {statusChanged && (
+                      <div style={{ fontSize: 10, color: "#f59e0b", whiteSpace: "nowrap" }}>
+                        🔄 was: {STATUS_CONFIG[d.previousStatus]?.label}
+                      </div>
+                    )}
+
+                    {/* Expiry */}
+                    <div style={{ width: 100, textAlign: "right" }}>
+                      {d.expiryDate ? (
+                        <>
+                          <div style={{ fontSize: 11, color: d.daysUntilExpiry < 30 ? "#ea580c" : "#64748b" }}>
+                            {d.daysUntilExpiry}d left
+                          </div>
+                          <div style={{ fontSize: 9, color: "#475569" }}>{d.expiryDate}</div>
+                        </>
+                      ) : (
+                        <div style={{ fontSize: 10, color: "#334155" }}>—</div>
+                      )}
+                    </div>
+
+                    {/* Last Checked */}
+                    <div style={{ width: 80, textAlign: "right" }}>
+                      {d.lastChecked ? (
+                        <div style={{ fontSize: 9, color: "#475569" }}>
+                          {new Date(d.lastChecked).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 9, color: "#334155" }}>never</div>
+                      )}
+                    </div>
+
+                    {/* Actions */}
+                    <div style={{ display: "flex", gap: 4 }}>
+                      <button
+                        onClick={() => checkDomain(d.id)}
+                        disabled={isChecking}
+                        style={{
+                          padding: "6px 10px", borderRadius: 6, border: "1px solid #1e293b",
+                          background: "transparent", color: isChecking ? "#334155" : "#94a3b8",
+                          fontSize: 11, cursor: isChecking ? "not-allowed" : "pointer",
+                        }}
+                      >
+                        {isChecking ? <span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}>⟳</span> : "Check"}
+                      </button>
+                      <button
+                        onClick={() => removeDomain(d.id)}
+                        style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid transparent", background: "transparent", color: "#475569", fontSize: 11, cursor: "pointer" }}
+                      >
+                        ✕
+                      </button>
+                    </div>
                   </div>
 
-                  {/* Status Badge */}
-                  <div style={{
-                    padding: "4px 10px", borderRadius: 20, fontSize: 11, fontWeight: 600,
-                    background: sc.bg, color: sc.color, whiteSpace: "nowrap",
-                    border: `1px solid ${sc.color}22`,
-                    animation: d.status === "available" ? "pulse 2s infinite" : "none",
-                  }}>
-                    {sc.icon} {sc.label}
-                  </div>
-
-                  {/* Status Change Indicator */}
-                  {statusChanged && (
-                    <div style={{ fontSize: 10, color: "#f59e0b", whiteSpace: "nowrap" }}>
-                      🔄 was: {STATUS_CONFIG[d.previousStatus]?.label}
+                  {/* Pricing & Purchase Links (shown for available domains) */}
+                  {showPricing && (
+                    <div style={{
+                      padding: "10px 20px 12px", borderTop: "1px solid #16a34a22",
+                      background: "#071210", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+                    }}>
+                      <span style={{ fontSize: 10, color: "#4ade80", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                        Register at:
+                      </span>
+                      {d.pricing.purchaseLinks.map((link) => (
+                        <a
+                          key={link.name}
+                          href={link.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            padding: "4px 10px", borderRadius: 5, fontSize: 10, fontWeight: 500,
+                            background: "#14532d", color: "#4ade80", border: "1px solid #16a34a44",
+                            textDecoration: "none", cursor: "pointer", transition: "all 0.2s",
+                            display: "inline-flex", alignItems: "center", gap: 4,
+                          }}
+                          onMouseEnter={(e) => { e.target.style.background = "#166534"; }}
+                          onMouseLeave={(e) => { e.target.style.background = "#14532d"; }}
+                        >
+                          {link.name}
+                          {link.note && <span style={{ fontSize: 8, color: "#86efac", fontWeight: 400 }}>({link.note})</span>}
+                          <span style={{ fontSize: 9 }}>↗</span>
+                        </a>
+                      ))}
+                      {!d.pricing.estimatedPrice && (
+                        <span style={{ fontSize: 9, color: "#475569", fontStyle: "italic" }}>
+                          Pricing varies by registrar for {d.pricing.tld} domains
+                        </span>
+                      )}
                     </div>
                   )}
-
-                  {/* Expiry */}
-                  <div style={{ width: 100, textAlign: "right" }}>
-                    {d.expiryDate ? (
-                      <>
-                        <div style={{ fontSize: 11, color: d.daysUntilExpiry < 30 ? "#ea580c" : "#64748b" }}>
-                          {d.daysUntilExpiry}d left
-                        </div>
-                        <div style={{ fontSize: 9, color: "#475569" }}>{d.expiryDate}</div>
-                      </>
-                    ) : (
-                      <div style={{ fontSize: 10, color: "#334155" }}>—</div>
-                    )}
-                  </div>
-
-                  {/* Last Checked */}
-                  <div style={{ width: 80, textAlign: "right" }}>
-                    {d.lastChecked ? (
-                      <div style={{ fontSize: 9, color: "#475569" }}>
-                        {new Date(d.lastChecked).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      </div>
-                    ) : (
-                      <div style={{ fontSize: 9, color: "#334155" }}>never</div>
-                    )}
-                  </div>
-
-                  {/* Actions */}
-                  <div style={{ display: "flex", gap: 4 }}>
-                    <button
-                      onClick={() => checkDomain(d.id)}
-                      disabled={isChecking}
-                      style={{
-                        padding: "6px 10px", borderRadius: 6, border: "1px solid #1e293b",
-                        background: "transparent", color: isChecking ? "#334155" : "#94a3b8",
-                        fontSize: 11, cursor: isChecking ? "not-allowed" : "pointer",
-                      }}
-                    >
-                      {isChecking ? <span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}>⟳</span> : "Check"}
-                    </button>
-                    <button
-                      onClick={() => removeDomain(d.id)}
-                      style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid transparent", background: "transparent", color: "#475569", fontSize: 11, cursor: "pointer" }}
-                    >
-                      ✕
-                    </button>
-                  </div>
                 </div>
               );
             })}
